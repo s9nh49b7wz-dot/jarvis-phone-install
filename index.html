@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Jarvis" />
+  <title>Jarvis</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+      background: #0a0a0f;
+      color: #e0e0e0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      overflow: hidden;
+    }
+    .container {
+      width: 100%;
+      max-width: 420px;
+      text-align: center;
+    }
+    h1 {
+      font-size: 1.8rem;
+      font-weight: 300;
+      letter-spacing: 4px;
+      color: #00d4ff;
+      margin-bottom: 8px;
+    }
+    .subtitle {
+      font-size: 0.85rem;
+      color: #666;
+      margin-bottom: 40px;
+    }
+    .orb {
+      width: 160px;
+      height: 160px;
+      border-radius: 50%;
+      margin: 0 auto 40px;
+      background: radial-gradient(circle at 30% 30%, #00d4ff, #0066aa 60%, #003344);
+      box-shadow: 0 0 40px rgba(0, 212, 255, 0.4), inset 0 0 30px rgba(0, 100, 150, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.3s ease;
+      cursor: pointer;
+      position: relative;
+    }
+    .orb.listening {
+      box-shadow: 0 0 60px rgba(0, 255, 150, 0.7), inset 0 0 40px rgba(0, 150, 100, 0.6);
+      animation: pulse 1.5s infinite;
+    }
+    .orb.speaking {
+      box-shadow: 0 0 60px rgba(255, 180, 0, 0.7);
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+    }
+    .orb-inner {
+      font-size: 2.5rem;
+      opacity: 0.9;
+    }
+    #status {
+      font-size: 1.1rem;
+      min-height: 1.5em;
+      margin-bottom: 20px;
+      color: #aaa;
+    }
+    #transcript {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(0,212,255,0.2);
+      border-radius: 16px;
+      padding: 16px;
+      min-height: 80px;
+      max-height: 160px;
+      overflow-y: auto;
+      text-align: left;
+      font-size: 0.95rem;
+      line-height: 1.5;
+      margin-bottom: 24px;
+      white-space: pre-wrap;
+    }
+    .controls {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    button {
+      background: rgba(0, 212, 255, 0.15);
+      border: 1px solid rgba(0, 212, 255, 0.4);
+      color: #00d4ff;
+      padding: 12px 24px;
+      border-radius: 30px;
+      font-size: 0.95rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    button:active {
+      background: rgba(0, 212, 255, 0.3);
+      transform: scale(0.97);
+    }
+    button.primary {
+      background: #00d4ff;
+      color: #000;
+      font-weight: 600;
+    }
+    .note {
+      margin-top: 40px;
+      font-size: 0.75rem;
+      color: #555;
+      line-height: 1.4;
+      max-width: 320px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>J.A.R.V.I.S</h1>
+    <div class="subtitle">Just A Rather Very Intelligent System</div>
+
+    <div class="orb" id="orb" onclick="toggleListen()">
+      <div class="orb-inner">🎤</div>
+    </div>
+
+    <div id="status">Tap the orb or say something</div>
+    <div id="transcript"></div>
+
+    <div class="controls">
+      <button class="primary" onclick="toggleListen()">Listen</button>
+      <button onclick="speak('At your service, sir.')">Test Voice</button>
+      <button onclick="clearChat()">Clear</button>
+    </div>
+
+    <div class="note">
+      Voice recognition works in Safari on iPhone.<br>
+      For deeper control of your device, use Apple Shortcuts + Siri (see README).
+    </div>
+  </div>
+
+  <script>
+    const statusEl = document.getElementById('status');
+    const transcriptEl = document.getElementById('transcript');
+    const orb = document.getElementById('orb');
+
+    let recognition = null;
+    let isListening = false;
+    let conversation = [];
+
+    // Simple local responses (no API key needed)
+    const replies = {
+      hello: ["Hello. How may I assist you today?", "Good day. At your service.", "Yes?"],
+      time: () => `The current time is ${new Date().toLocaleTimeString()}.`,
+      date: () => `Today is ${new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}.`,
+      who: ["I am Jarvis, your personal assistant.", "Just A Rather Very Intelligent System."],
+      thanks: ["You're welcome.", "My pleasure.", "Anytime."],
+      default: ["Interesting. Tell me more.", "I understand.", "How else can I help?", "Noted."]
+    };
+
+    function getReply(text) {
+      const t = text.toLowerCase();
+      if (t.includes('hello') || t.includes('hi') || t.includes('hey')) return pick(replies.hello);
+      if (t.includes('time')) return replies.time();
+      if (t.includes('date') || t.includes('day')) return replies.date();
+      if (t.includes('who are you') || t.includes('what are you')) return pick(replies.who);
+      if (t.includes('thank')) return pick(replies.thanks);
+      if (t.includes('joke')) return "Why did the AI go to therapy? It had too many unresolved issues.";
+      return pick(replies.default);
+    }
+
+    function pick(arr) {
+      return arr[Math.floor(Math.random() * arr.length)];
+    }
+
+    function speak(text) {
+      if (!window.speechSynthesis) return;
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.rate = 0.95;
+      u.pitch = 0.9;
+      // Prefer a more formal voice if available
+      const voices = speechSynthesis.getVoices();
+      const preferred = voices.find(v => v.name.includes('Samantha') || v.name.includes('Daniel') || v.lang.startsWith('en'));
+      if (preferred) u.voice = preferred;
+      orb.classList.add('speaking');
+      statusEl.textContent = 'Speaking...';
+      u.onend = () => {
+        orb.classList.remove('speaking');
+        statusEl.textContent = 'Tap the orb to speak again';
+      };
+      speechSynthesis.speak(u);
+    }
+
+    function initRecognition() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        statusEl.textContent = 'Speech recognition not supported in this browser';
+        return null;
+      }
+      const r = new SpeechRecognition();
+      r.continuous = false;
+      r.interimResults = false;
+      r.lang = 'en-US';
+
+      r.onstart = () => {
+        isListening = true;
+        orb.classList.add('listening');
+        statusEl.textContent = 'Listening...';
+      };
+
+      r.onresult = (event) => {
+        const text = event.results[0][0].transcript;
+        transcriptEl.textContent += (transcriptEl.textContent ? '\n' : '') + 'You: ' + text;
+        const reply = getReply(text);
+        setTimeout(() => {
+          transcriptEl.textContent += '\nJarvis: ' + reply;
+          transcriptEl.scrollTop = transcriptEl.scrollHeight;
+          speak(reply);
+        }, 300);
+      };
+
+      r.onerror = (e) => {
+        console.log('Recognition error', e.error);
+        stopListen();
+        if (e.error === 'not-allowed') {
+          statusEl.textContent = 'Microphone permission denied';
+        } else {
+          statusEl.textContent = 'Error: ' + e.error;
+        }
+      };
+
+      r.onend = () => {
+        stopListen();
+      };
+
+      return r;
+    }
+
+    function toggleListen() {
+      if (isListening) {
+        stopListen();
+      } else {
+        startListen();
+      }
+    }
+
+    function startListen() {
+      if (!recognition) recognition = initRecognition();
+      if (!recognition) return;
+      try {
+        recognition.start();
+      } catch (e) {
+        // already started
+      }
+    }
+
+    function stopListen() {
+      isListening = false;
+      orb.classList.remove('listening');
+      if (recognition) {
+        try { recognition.stop(); } catch (e) {}
+      }
+      if (!orb.classList.contains('speaking')) {
+        statusEl.textContent = 'Tap the orb to speak';
+      }
+    }
+
+    function clearChat() {
+      transcriptEl.textContent = '';
+    }
+
+    // Load voices
+    speechSynthesis.getVoices();
+    if (speechSynthesis.onvoiceschanged !== undefined) {
+      speechSynthesis.onvoiceschanged = () => speechSynthesis.getVoices();
+    }
+
+    // Welcome
+    setTimeout(() => speak('Systems online. How may I help you?'), 800);
+  </script>
+</body>
+</html>
